@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spinning Down the Fox Hole - Test 002</title>
+<link href="https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap" rel="stylesheet">
+<style>
+body { margin:0; overflow:hidden; font-family:Arial,sans-serif; background:#020024; }
+canvas { display:block; position:absolute; top:0; left:0; z-index:1; }
+
+.menu { 
+  position:absolute; top:0; left:0; width:100%; height:100%;
+  background:#000000; 
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  z-index:10; opacity:1; pointer-events:auto;
+}
+.menu-title { display:flex; align-items:center; justify-content:center; margin-bottom:25px; }
+.menu-title .title-block { display:flex; flex-direction:column; align-items:center; }
+.menu-title .title-block h1 { 
+  font-family: 'Great Vibes', cursive; 
+  color: gold; 
+  font-size:48px; 
+  margin:0; 
+  text-align:center; 
+  line-height:1;
+}
+.menu-title img { width:150px; height:auto; }
+.menu-title .left { transform:scaleX(-1); } 
+.menu button { 
+  font-size:26px; padding:12px 30px; margin:8px; border:none; border-radius:10px;
+  background:linear-gradient(180deg,#000000,#222222); 
+  color: gold; 
+  cursor:pointer; width:220px; transition:0.3s; 
+}
+.menu button:hover { background:linear-gradient(180deg,#333333,#555555); }
+.hidden { display:none; }
+
+#pauseBtn {
+  position:absolute; top:20px; right:20px;
+  padding:10px 20px; font-size:20px; z-index:5;
+  border:none; border-radius:8px;
+  background:rgba(255,123,0,0.7);
+  color:white; cursor:pointer; display:none;
+}
+</style>
+</head>
+<body>
+
+<div class="menu" id="mainMenu">
+  <div class="menu-title">
+    <img src="https://i.ibb.co/p6Lt7nNd/e2eb6366-b194-476b-a714-99a2449d34ba.png" class="left">
+    <div class="title-block">
+      <h1>Spinning Down</h1>
+      <h1>The</h1>
+      <h1>Fox Hole</h1>
+    </div>
+    <img src="https://i.ibb.co/p6Lt7nNd/e2eb6366-b194-476b-a714-99a2449d34ba.png" class="right">
+  </div>
+  <h2 id="bestScoreText">High Score: 0 by Anonymous</h2>
+  <button id="playBtn">Play</button>
+  <button id="continueBtn" style="display:none;">Continue</button>
+  <button id="highScoresBtn">High Scores</button>
+  <button id="resetHighBtn">Reset High Score</button>
+  <button id="fullscreenBtn">Full Screen</button>
+</div>
+
+<div class="menu hidden" id="pauseMenu">
+  <h1>Paused</h1>
+  <button id="continueGameBtn">Continue</button>
+  <button id="restartBtn">Restart</button>
+  <button id="menuBtn">Main Menu</button>
+</div>
+
+<button id="pauseBtn">Pause</button>
+<canvas id="gameCanvas"></canvas>
+
+<script>
+// ---------------------- GAME VARIABLES ----------------------
+const canvas=document.getElementById("gameCanvas");
+const ctx=canvas.getContext("2d");
+canvas.width=window.innerWidth;
+canvas.height=window.innerHeight;
+
+const mainMenu=document.getElementById("mainMenu");
+const pauseMenu=document.getElementById("pauseMenu");
+const bestScoreText=document.getElementById("bestScoreText");
+const playBtn=document.getElementById("playBtn");
+const continueBtn=document.getElementById("continueBtn");
+const highScoresBtn=document.getElementById("highScoresBtn");
+const resetHighBtn=document.getElementById("resetHighBtn");
+const fullscreenBtn=document.getElementById("fullscreenBtn");
+const continueGameBtn=document.getElementById("continueGameBtn");
+const restartBtn=document.getElementById("restartBtn");
+const menuBtn=document.getElementById("menuBtn");
+const pauseBtn=document.getElementById("pauseBtn");
+
+let foxImg=new Image(); foxImg.src="https://i.ibb.co/p6Lt7nNd/e2eb6366-b194-476b-a714-99a2449d34ba.png";
+let obstacleImg=new Image(); obstacleImg.src="https://i.ibb.co/SwGYdXP8/file-00000000fa906206a0873428ec82c8a9.png";
+
+let foxWidth=120, foxHeight=120, foxX=50, foxY=canvas.height-foxHeight-50;
+let velocityY=0, gravity=0.7, groundHeight=50;
+let obstacles=[], gameSpeed=5;
+let isGameOver=false, isPaused=true;
+let score=0, jumpCount=0, maxJumps=2;
+let highScore=parseInt(localStorage.getItem("foxHighScore"))||0;
+let highScoreName=localStorage.getItem("foxHighScoreName")||"Anonymous";
+let obstaclesPassed=0;
+let firstObstacleSpawned=false;
+
+// ---------------------- FOREST, MOUNTAINS, STARS & MOON ----------------------
+let forestLayers = [
+  {color:"#0a0a0a", speed:0.5, height:200},
+  {color:"#111111", speed:1, height:180},
+  {color:"#222222", speed:1.5, height:150}
+];
+let forestPositions = forestLayers.map(layer => {
+  let positions = [];
+  for (let x=0; x<canvas.width+50; x+=50){
+    positions.push({x:x, height:layer.height + Math.random()*50});
+  }
+  return positions;
+});
+
+let mountains = [
+  {color:"#1b1b1b", speed:0.2, peaks:[], baseHeight:300},
+  {color:"#2c2c2c", speed:0.35, peaks:[], baseHeight:220}
+];
+mountains.forEach(layer=>{
+  for(let x=0;x<canvas.width+100;x+=50){
+    layer.peaks.push({x:x, height:layer.baseHeight + Math.random()*150});
+  }
+});
+
+let stars=[]; 
+for(let i=0;i<100;i++) stars.push({x:Math.random()*canvas.width, y:Math.random()*canvas.height*0.5, size:Math.random()*2+1});
+
+// Moon
+let moon={x:canvas.width*0.8, y:canvas.height*0.15, radius:60, glow:25};
+
+// ---------------------- INPUT ----------------------
+function jump(){ if(isPaused||isGameOver) return; if(jumpCount<maxJumps){ velocityY=-16; jumpCount++; } }
+document.addEventListener("keydown", e=>{ if(e.code==="Space") jump(); });
+document.addEventListener("touchstart", jump);
+
+// ---------------------- FULLSCREEN ----------------------
+fullscreenBtn.onclick=()=>{
+  if(!document.fullscreenElement) document.documentElement.requestFullscreen().catch(err=>alert(`Full screen error: ${err.message}`));
+  else document.exitFullscreen();
+};
+
+// ---------------------- RESIZE ----------------------
+window.addEventListener("resize", ()=>{
+  canvas.width=window.innerWidth;
+  canvas.height=window.innerHeight;
+  // Reposition moon
+  moon.x = canvas.width*0.8;
+  moon.y = canvas.height*0.15;
+});
+
+// ---------------------- MENU BUTTONS ----------------------
+playBtn.onclick=startGame;
+continueBtn.onclick=resumeGame;
+restartBtn.onclick=restartGame;
+menuBtn.onclick=returnToMenu;
+highScoresBtn.onclick=()=>alert(`High Score: ${highScore} by ${highScoreName}`);
+resetHighBtn.onclick=()=>{
+    localStorage.removeItem("foxHighScore");
+    localStorage.removeItem("foxHighScoreName");
+    highScore=0; highScoreName="Anonymous";
+    bestScoreText.textContent=`High Score: 0 by Anonymous`;
+    alert("High Score Reset!");
+};
+pauseBtn.onclick=()=>{ if(!isPaused&&!isGameOver) pauseGame(); };
+
+// ---------------------- GAME FUNCTIONS ----------------------
+function startGame(){
+    mainMenu.classList.add("hidden");
+    continueBtn.style.display="block";
+    isPaused=false; isGameOver=false; pauseBtn.style.display="block"; resetGame();
+    firstObstacleSpawned=false; spawnObstacle();
+}
+function pauseGame(){ isPaused=true; pauseMenu.classList.remove("hidden"); }
+function resumeGame(){ isPaused=false; pauseMenu.classList.add("hidden"); if(!firstObstacleSpawned){ firstObstacleSpawned=true; spawnObstacle(); } }
+function restartGame(){ pauseMenu.classList.add("hidden"); isPaused=false; isGameOver=false; resetGame(); spawnObstacle(); }
+function returnToMenu(){ isPaused=true; pauseMenu.classList.add("hidden"); mainMenu.classList.remove("hidden"); pauseBtn.style.display="none"; bestScoreText.textContent=`High Score: ${highScore} by ${highScoreName}`; }
+function resetGame(){ foxY=canvas.height-foxHeight-groundHeight; velocityY=0; obstacles=[]; score=0; jumpCount=0; obstaclesPassed=0; gameSpeed=5; }
+
+// ---------------------- OBSTACLES ----------------------
+function spawnObstacle(){
+    let baseSize=80+Math.random()*40;
+    let isPair=Math.random()<0.25;
+    let spacing=300+Math.random()*150;
+    let obs1={x:canvas.width+spacing, y:canvas.height-groundHeight-baseSize, width:baseSize*0.7, height:baseSize, scored:false, isPair:isPair};
+    obstacles.push(obs1);
+    if(isPair){
+        let obs2={x:obs1.x+baseSize+50, y:canvas.height-groundHeight-(60+Math.random()*30), width:baseSize*0.7, height:baseSize, scored:false, isPair:true};
+        obstacles.push(obs2);
+    }
+    firstObstacleSpawned=true;
+}
+function updateObstacles(){
+    for(let obs of obstacles){ obs.x-=gameSpeed; if(!obs.scored && obs.x+obs.width<foxX){ obs.scored=true; score+=obs.isPair?3:1; obstaclesPassed++; } }
+    obstacles = obstacles.filter(obs=>obs.x+obs.width>0);
+    let lastX = obstacles.length ? obstacles[obstacles.length-1].x : canvas.width;
+    if(lastX < canvas.width-400) spawnObstacle();
+}
+
+// ---------------------- COLLISION ----------------------
+function detectCollision(){
+    for(let obs of obstacles){
+        if(foxX+foxWidth*0.6>obs.x && foxX<obs.x+obs.width*0.6 &&
+           foxY+foxHeight*0.8>obs.y && foxY<obs.y+obs.height*0.6) gameOver();
+    }
+}
+
+// ---------------------- BACKGROUND ----------------------
+function drawBackground(){
+    ctx.fillStyle="#020024"; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    // Stars
+    for(let s of stars){ 
+        ctx.fillStyle="white"; 
+        ctx.beginPath(); 
+        ctx.arc(s.x,s.y,s.size,0,Math.PI*2); 
+        ctx.fill(); 
+        s.x-=0.2; 
+        if(s.x<0) s.x=canvas.width; 
+    }
+
+    // Moon
+    ctx.save();
+    let gradient = ctx.createRadialGradient(moon.x, moon.y, moon.radius-15, moon.x, moon.y, moon.radius+moon.glow);
+    gradient.addColorStop(0, "rgba(255, 255, 230, 0.9)");
+    gradient.addColorStop(1, "rgba(200, 180, 255, 0.3)");
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(moon.x, moon.y, moon.radius+moon.glow, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+
+    // Mountains
+    mountains.forEach(layer=>{
+        ctx.fillStyle=layer.color;
+        ctx.beginPath();
+        ctx.moveTo(0, canvas.height);
+        layer.peaks.forEach(p=>{
+            p.x -= layer.speed;
+            if(p.x<-50) p.x=canvas.width + Math.random()*100;
+            ctx.lineTo(p.x, canvas.height - p.height);
+        });
+        ctx.lineTo(canvas.width, canvas.height);
+        ctx.closePath();
+        ctx.fill();
+    });
+
+    // Trees
+    forestLayers.forEach((layer, layerIndex)=>{
+        ctx.fillStyle=layer.color;
+        forestPositions[layerIndex].forEach(tree=>{
+            tree.x -= layer.speed;
+            if(tree.x<-50) tree.x=canvas.width;
+            let treeHeight=tree.height;
+            ctx.fillRect(tree.x+20,canvas.height-groundHeight-treeHeight,10,treeHeight);
+            for(let b=0;b<3;b++){
+                let branchY=canvas.height-groundHeight-treeHeight/4 - b*treeHeight/4;
+                ctx.beginPath();
+                ctx.moveTo(tree.x+25,branchY); ctx.lineTo(tree.x+10,branchY-10);
+                ctx.strokeStyle=layer.color; ctx.lineWidth=2; ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(tree.x+25,branchY); ctx.lineTo(tree.x+40,branchY-10); ctx.stroke();
+            }
+        });
+    });
+
+    // Ground
+    ctx.fillStyle="#111"; ctx.fillRect(0,canvas.height-groundHeight,canvas.width,groundHeight);
+}
+
+// ---------------------- DRAW OBSTACLES ----------------------
+function drawObstacles(){ 
+    for(let obs of obstacles){
+        ctx.save();
+        ctx.translate(obs.x+obs.width/2, obs.y+obs.height/2);
+        ctx.rotate(obs.rotation*Math.PI/180||0);
+        ctx.drawImage(obstacleImg,-obs.width/2,-obs.height/2,obs.width,obs.height);
+        ctx.restore();
+    }
+}
+
+// ---------------------- GAME OVER ----------------------
+function gameOver(){
+    isGameOver=true; isPaused=true; pauseBtn.style.display="none";
+    let newHigh=false;
+    if(score>highScore){ highScore=score; newHigh=true; }
+    let overlay=document.createElement("div");
+    overlay.style.position="absolute"; overlay.style.top="0"; overlay.style.left="0"; overlay.style.width="100%"; overlay.style.height="100%";
+    overlay.style.background="rgba(0,0,0,0.8)"; overlay.style.display="flex"; overlay.style.flexDirection="column";
+    overlay.style.alignItems="center"; overlay.style.justifyContent="center"; overlay.style.zIndex="20"; overlay.style.color="white"; overlay.style.fontFamily="Arial,sans-serif"; overlay.style.textAlign="center";
+    if(newHigh){
+        overlay.innerHTML=`<h1>Congratulations!!</h1><p>New High Score: ${highScore}</p><p>Enter your name:</p>
+        <input type="text" id="playerName" placeholder="Your Name" style="font-size:20px;padding:6px 10px;border-radius:6px;border:none;margin-top:10px;">
+        <button id="saveNameBtn" style="font-size:20px;padding:8px 16px;margin-top:10px;border:none;border-radius:6px;background:#007bff;color:white;cursor:pointer;">Save</button>`;
+        document.body.appendChild(overlay);
+        document.getElementById("saveNameBtn").onclick=()=>{
+            let name=document.getElementById("playerName").value||"Anonymous";
+            localStorage.setItem("foxHighScoreName",name);
+            localStorage.setItem("foxHighScore",highScore);
+            overlay.remove();
+            returnToMenu();
+        };
+        document.getElementById("playerName").addEventListener("keydown", e=>{ if(e.key==="Enter") document.getElementById("saveNameBtn").click(); });
+    } else {
+        overlay.innerHTML=`<h1>Game Over</h1><p>Your Score: ${score}</p><p>High Score: ${highScore} by ${highScoreName}</p>
+        <button id="closeOverlayBtn" style="font-size:24px;padding:10px 20px;margin-top:20px;border:none;border-radius:8px;background:#007bff;color:white;cursor:pointer;">Back to Menu</button>`;
+        document.body.appendChild(overlay);
+        document.getElementById("closeOverlayBtn").onclick=()=>{ overlay.remove(); returnToMenu(); };
+    }
+}
+
+// ---------------------- GAME LOOP ----------------------
+function gameLoop(){
+    drawBackground();
+    if(!isPaused && !isGameOver){
+        velocityY+=gravity; foxY+=velocityY;
+        if(foxY+foxHeight>=canvas.height-groundHeight){ foxY=canvas.height-foxHeight-groundHeight; velocityY=0; jumpCount=0; }
+        updateObstacles();
+        detectCollision();
+        if(score<150) gameSpeed=5; else if(score<300) gameSpeed=7; else gameSpeed=9;
+    }
+    ctx.drawImage(foxImg,foxX,foxY,foxWidth,foxHeight);
+    drawObstacles();
+    ctx.fillStyle="white"; ctx.font="24px Arial"; ctx.fillText("Score: "+score,20,40); ctx.fillText("High Score: "+highScore,20,70);
+    requestAnimationFrame(gameLoop);
+}
+gameLoop();
+</script>
+</body>
+</html>
