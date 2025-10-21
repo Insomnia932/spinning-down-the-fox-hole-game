@@ -4,6 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Spinning Down the Fox Hole - Playable</title>
+
+<!-- Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-XXXXXXXXXX'); // Replace with your GA Measurement ID
+</script>
+
 <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap" rel="stylesheet">
 <style>
 body { margin:0; overflow:hidden; font-family:Arial,sans-serif; background:#020024; }
@@ -175,11 +185,17 @@ const fullscreenBtn = document.getElementById("fullscreenBtn");
 const exitFullscreenBtn = document.getElementById("exitFullscreenBtn");
 fullscreenBtn.onclick = ()=>{
   if(!document.fullscreenElement){
-    document.documentElement.requestFullscreen().then(()=>{ exitFullscreenBtn.style.display="block"; });
+    document.documentElement.requestFullscreen().then(()=>{
+      exitFullscreenBtn.style.display="block";
+      gtag('event','fullscreen_enter',{event_category:'game'});
+    });
   }
 };
 exitFullscreenBtn.onclick = ()=>{
-  if(document.fullscreenElement) document.exitFullscreen();
+  if(document.fullscreenElement) {
+    document.exitFullscreen();
+    gtag('event','fullscreen_exit',{event_category:'game'});
+  }
 };
 
 // ---------------------- MENU BUTTONS ----------------------
@@ -198,7 +214,7 @@ continueBtn.onclick=resumeGame;
 restartBtn.onclick=restartGame;
 menuBtn.onclick=returnToMenu;
 
-highScoresBtn.onclick = ()=>loadTopScores();
+highScoresBtn.onclick = ()=>{ loadTopScores(); gtag('event','view_leaderboard',{event_category:'game'}); };
 pauseBtn.onclick=()=>{ if(!isPaused&&!isGameOver) pauseGame(); };
 continueGameBtn.onclick=resumeGame;
 
@@ -251,7 +267,13 @@ function gameLoop(){
 gameLoop();
 
 // ---------------------- GAME FUNCTIONS ----------------------
-function startGame(){ mainMenu.classList.add("hidden"); continueBtn.style.display="block"; isPaused=false; isGameOver=false; pauseBtn.style.display="block"; resetGame(); spawnObstacle(); spawnFireball(); }
+function startGame(){
+  mainMenu.classList.add("hidden");
+  continueBtn.style.display="block";
+  isPaused=false; isGameOver=false; pauseBtn.style.display="block";
+  resetGame(); spawnObstacle(); spawnFireball();
+  gtag('event','game_start',{event_category:'game'});
+}
 function pauseGame(){ isPaused=true; pauseMenu.classList.remove("hidden"); }
 function resumeGame(){ isPaused=false; pauseMenu.classList.add("hidden"); }
 function restartGame(){ pauseMenu.classList.add("hidden"); isPaused=false; isGameOver=false; resetGame(); spawnObstacle(); spawnFireball(); }
@@ -259,10 +281,12 @@ function returnToMenu(){ isPaused=true; pauseMenu.classList.add("hidden"); mainM
 function resetGame(){ foxY=canvas.height-foxHeight-groundHeight; velocityY=0; obstacles=[]; fireballs=[]; score=0; lives=3; jumpCount=0; gameSpeed=5; }
 
 // ---------------------- GAME OVER ----------------------
-function gameOver(){ isGameOver=true; isPaused=true; pauseBtn.style.display="none"; 
+function gameOver(){
+  isGameOver=true; isPaused=true; pauseBtn.style.display="none"; 
   let playerName = prompt("Enter your name:","Anonymous") || "Anonymous"; 
-  saveScore(playerName,score); 
-  alert(`Game Over! Score: ${score}\nTop Score: ${topScores[0]?.score || 0} by ${topScores[0]?.name}`); 
+  saveScore(playerName,score);
+  gtag('event','game_over',{event_category:'game', score:score, player_name:playerName});
+  alert(`Game Over! Score: ${score}\nTop Score: ${topScores[0]?.score || 0} by ${topScores[0]?.name}`);
   returnToMenu();
 }
 
