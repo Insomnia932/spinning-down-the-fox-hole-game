@@ -26,6 +26,17 @@ canvas { display:block; position:absolute; top:0; left:0; z-index:1; }
 #pauseBtn, #exitFullscreenBtn { position:absolute; top:20px; right:20px; padding:10px 20px; font-size:20px; border:none; border-radius:8px; z-index:5; cursor:pointer; display:none; }
 #pauseBtn { background:rgba(255,123,0,0.7); color:white; }
 #exitFullscreenBtn { background:#222; color:gold; font-size:24px; }
+
+#leaderboard {
+  background: rgba(0,0,0,0.8);
+  color: gold;
+  padding: 20px;
+  border-radius: 15px;
+  max-height: 300px;
+  overflow-y: auto;
+  text-align: center;
+  margin-top: 15px;
+}
 </style>
 </head>
 <body>
@@ -44,8 +55,8 @@ canvas { display:block; position:absolute; top:0; left:0; z-index:1; }
   <button id="playBtn">Play</button>
   <button id="continueBtn" style="display:none;">Continue</button>
   <button id="highScoresBtn">High Scores</button>
-  <button id="resetHighBtn">Reset High Scores</button>
   <button id="fullscreenBtn">Fullscreen</button>
+  <div id="leaderboard"></div>
 </div>
 
 <div class="menu hidden" id="pauseMenu">
@@ -59,7 +70,23 @@ canvas { display:block; position:absolute; top:0; left:0; z-index:1; }
 <button id="exitFullscreenBtn">X</button>
 <canvas id="gameCanvas"></canvas>
 
+<script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-database-compat.js"></script>
 <script>
+// ---------------------- FIREBASE ----------------------
+const firebaseConfig = {
+  apiKey: "AIzaSyBPZmWicpiQbaKWBWx48HBMaa4F46-5D4k",
+  authDomain: "sdtfh-game.firebaseapp.com",
+  databaseURL: "https://sdtfh-game-default-rtdb.firebaseio.com",
+  projectId: "sdtfh-game",
+  storageBucket: "sdtfh-game.firebasestorage.app",
+  messagingSenderId: "857298673539",
+  appId: "1:857298673539:web:1d8afecec739fe92cfa0b6",
+  measurementId: "G-CCVMTT7KFE"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
 // ---------------------- CANVAS ----------------------
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
@@ -79,27 +106,52 @@ let gameSpeed=5, score=0, lives=3;
 let jumpCount=0, maxJumps=3;
 let isPaused=true, isGameOver=false;
 
-// ---------------------- TOP 10 HIGH SCORES ----------------------
-let topScores = JSON.parse(localStorage.getItem("foxTopScores")) || [];
-let bestScoreText = document.getElementById("bestScoreText");
-bestScoreText.textContent = topScores.length > 0 ? `Top Score: ${topScores[0].score}` : "Top Score: 0";
+// ---------------------- HIGH SCORES ----------------------
+let topScores = [];
+const bestScoreText = document.getElementById("bestScoreText");
+const leaderboardDiv = document.getElementById("leaderboard");
+
+function loadTopScores(){
+  db.ref('scores').orderByChild('score').limitToLast(10).once('value')
+    .then(snapshot => {
+      if(snapshot.exists()){
+        topScores = Object.values(snapshot.val()).sort((a,b)=>b.score-a.score);
+        bestScoreText.textContent = `Top Score: ${topScores[0]?.score || 0}`;
+        displayLeaderboard();
+      } else {
+        topScores = [];
+        bestScoreText.textContent = "Top Score: 0";
+        leaderboardDiv.innerHTML = "<p>No high scores yet!</p>";
+      }
+    }).catch(err=>console.error("Firebase load error:", err));
+}
+
+function saveScore(name, score){
+  db.ref('scores').push({name, score, timestamp: Date.now()})
+    .then(()=> loadTopScores())
+    .catch(err=>console.error("Firebase save error:", err));
+}
+
+function displayLeaderboard(){
+  leaderboardDiv.innerHTML = "<h3>🏆 Top 10 High Scores 🏆</h3>";
+  topScores.forEach((entry,index)=>{
+    leaderboardDiv.innerHTML += `<p>${index+1}. ${entry.name} - ${entry.score}</p>`;
+  });
+}
 
 // ---------------------- FOREST & BACKGROUND ----------------------
 let forestLayers = [
-  {color:"#0b0f3a", speed:0.5, height:200}, // dark navy
-  {color:"#2e004f", speed:1, height:180},   // dark purple
-  {color:"#034d03", speed:1.5, height:150}  // dark green
+  {color:"#0b0f3a", speed:0.5, height:200},
+  {color:"#2e004f", speed:1, height:180},
+  {color:"#034d03", speed:1.5, height:150}
 ];
-
 let forestPositions = forestLayers.map(layer => {
   let positions = [];
   for (let x = 0; x < canvas.width + 50; x += 50) {
-    let treeHeight = layer.height + Math.random() * 50;
-    positions.push({x:x, height:treeHeight});
+    positions.push({x:x, height:layer.height + Math.random() * 50});
   }
   return positions;
 });
-
 let mountains = [
   {color:"#1b1b1b", speed:0.2, peaks:[], baseHeight:300},
   {color:"#2c2c2c", speed:0.35, peaks:[], baseHeight:220}
@@ -136,7 +188,6 @@ const pauseMenu=document.getElementById("pauseMenu");
 const playBtn=document.getElementById("playBtn");
 const continueBtn=document.getElementById("continueBtn");
 const highScoresBtn=document.getElementById("highScoresBtn");
-const resetHighBtn=document.getElementById("resetHighBtn");
 const continueGameBtn=document.getElementById("continueGameBtn");
 const restartBtn=document.getElementById("restartBtn");
 const menuBtn=document.getElementById("menuBtn");
@@ -147,140 +198,55 @@ continueBtn.onclick=resumeGame;
 restartBtn.onclick=restartGame;
 menuBtn.onclick=returnToMenu;
 
-// ---------------------- HIGH SCORES BUTTON ----------------------
-highScoresBtn.onclick = () => {
-    if(topScores.length===0){ alert("No high scores yet!"); return; }
-    let message = "🏆 Top 10 High Scores 🏆\n\n";
-    topScores.forEach((entry,index)=>{ message += `${index+1}. ${entry.name} - ${entry.score}\n`; });
-    alert(message);
-};
-
-// ---------------------- RESET HIGH SCORES BUTTON ----------------------
-resetHighBtn.onclick = () => {
-    if(confirm("Reset all top scores?")){ topScores=[]; localStorage.removeItem("foxTopScores"); bestScoreText.textContent="Top Score: 0"; alert("Top scores reset!"); }
-};
-
+highScoresBtn.onclick = ()=>loadTopScores();
 pauseBtn.onclick=()=>{ if(!isPaused&&!isGameOver) pauseGame(); };
 continueGameBtn.onclick=resumeGame;
 
-// ---------------------- SPAWN ----------------------
-function spawnObstacle() {
-    let baseSize = 80 + Math.random()*40;
-    obstacles.push({x:canvas.width+50, y:canvas.height-groundHeight-baseSize, width:baseSize*0.7, height:baseSize, scored:false, hit:false});
-}
-
-function spawnFireball() {
-    let fireballY = canvas.height-groundHeight-70-Math.random()*30;
-    fireballs.push({x:canvas.width+50, y:fireballY, radius:20, passed:false, hit:false});
-}
-
-// ---------------------- UPDATE ----------------------
-function updateObstacles() {
-    for(let obs of obstacles){ 
-        obs.x -= gameSpeed;
-        if(!obs.scored && obs.x + obs.width < foxX){ obs.scored=true; score+=1; }
-    }
-    obstacles = obstacles.filter(obs=>obs.x+obs.width>0);
-    if(obstacles.length===0 || obstacles[obstacles.length-1].x<canvas.width-400) spawnObstacle();
-}
-
-function updateFireballs() {
-    for(let f of fireballs){ 
-        f.x -= gameSpeed+1;
-        if(!f.passed && f.x+f.radius*2 < foxX){ f.passed=true; score+=5; }
-    }
-    fireballs = fireballs.filter(f=>f.x+f.radius*2>0);
-    if(fireballs.length===0 && Math.random()<0.02) spawnFireball();
-}
+// ---------------------- SPAWN & UPDATE ----------------------
+function spawnObstacle() { obstacles.push({x:canvas.width+50, y:canvas.height-groundHeight-(80+Math.random()*40), width:(80+Math.random()*40)*0.7, height:80+Math.random()*40, scored:false, hit:false}); }
+function spawnFireball() { fireballs.push({x:canvas.width+50, y:canvas.height-groundHeight-70-Math.random()*30, radius:20, passed:false, hit:false}); }
+function updateObstacles() { obstacles.forEach(obs=>{ obs.x-=gameSpeed; if(!obs.scored && obs.x + obs.width < foxX){ obs.scored=true; score+=1; } }); obstacles = obstacles.filter(obs=>obs.x+obs.width>0); if(obstacles.length===0 || obstacles[obstacles.length-1].x<canvas.width-400) spawnObstacle(); }
+function updateFireballs() { fireballs.forEach(f=>{ f.x -= gameSpeed+1; if(!f.passed && f.x+f.radius*2<foxX){ f.passed=true; score+=5; } }); fireballs = fireballs.filter(f=>f.x+f.radius*2>0); if(fireballs.length===0 && Math.random()<0.02) spawnFireball(); }
 
 // ---------------------- COLLISIONS ----------------------
-function detectCollisions() {
-    for(let obs of obstacles){
-        if(!obs.hit && foxX+foxWidth*0.6 > obs.x && foxX < obs.x + obs.width*0.6 && foxY+foxHeight > obs.y && foxY < obs.y + obs.height){
-            lives--; obs.hit=true;
-        }
-    }
-    for(let f of fireballs){
-        if(!f.hit && foxX+foxWidth*0.6 > f.x && foxX < f.x + f.radius*2 && foxY+foxHeight > f.y && foxY < f.y + f.radius*2){
-            lives--; f.hit=true;
-        }
-    }
-    if(lives <= 0) gameOver();
+function detectCollisions(){
+  obstacles.forEach(obs=>{ if(!obs.hit && foxX+foxWidth*0.6>obs.x && foxX<obs.x+obs.width*0.6 && foxY+foxHeight>obs.y && foxY<obs.y+obs.height){ lives--; obs.hit=true; } });
+  fireballs.forEach(f=>{ if(!f.hit && foxX+foxWidth*0.6>f.x && foxX<f.x+f.radius*2 && foxY+foxHeight>f.y && foxY<f.y+f.radius*2){ lives--; f.hit=true; } });
+  if(lives<=0) gameOver();
 }
 
 // ---------------------- DRAW FUNCTIONS ----------------------
-function drawObstacles(){ for(let obs of obstacles){ ctx.drawImage(obstacleImg, obs.x, obs.y, obs.width, obs.height); } }
-function drawFireballs(){ 
-    for(let f of fireballs){ 
-        ctx.save();
-        let gradient = ctx.createRadialGradient(f.x+f.radius,f.y+f.radius,5,f.x+f.radius,f.y+f.radius,f.radius);
-        gradient.addColorStop(0,"orange"); gradient.addColorStop(1,"rgba(255,0,0,0.5)");
-        ctx.fillStyle = gradient; 
-        ctx.beginPath(); 
-        ctx.arc(f.x+f.radius,f.y+f.radius,f.radius,0,Math.PI*2); 
-        ctx.fill(); 
-        ctx.restore(); 
-    } 
-}
-
-function drawHUD(){ 
-    ctx.fillStyle="white"; ctx.font="24px Arial"; 
-    ctx.fillText("Score: "+score,20,40);
-    ctx.fillText("Top Score: "+(topScores[0]?.score||0),20,70);
-    for(let i=0;i<lives;i++){ ctx.drawImage(heartImg,20+i*45,100,40,40); }
-}
+function drawObstacles(){ obstacles.forEach(obs=>ctx.drawImage(obstacleImg, obs.x, obs.y, obs.width, obs.height)); }
+function drawFireballs(){ fireballs.forEach(f=>{ ctx.save(); let grad=ctx.createRadialGradient(f.x+f.radius,f.y+f.radius,5,f.x+f.radius,f.y+f.radius,f.radius); grad.addColorStop(0,"orange"); grad.addColorStop(1,"rgba(255,0,0,0.5)"); ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(f.x+f.radius,f.y+f.radius,f.radius,0,Math.PI*2); ctx.fill(); ctx.restore(); }); }
+function drawHUD(){ ctx.fillStyle="white"; ctx.font="24px Arial"; ctx.fillText("Score: "+score,20,40); ctx.fillText("Top Score: "+(topScores[0]?.score||0),20,70); for(let i=0;i<lives;i++){ ctx.drawImage(heartImg,20+i*45,100,40,40); } }
 
 // ---------------------- DRAW BACKGROUND ----------------------
 function drawBackground(){
-    ctx.fillStyle="#020024"; ctx.fillRect(0,0,canvas.width,canvas.height);
-
-    for(let s of stars){ ctx.fillStyle="white"; ctx.beginPath(); ctx.arc(s.x,s.y,s.size,0,Math.PI*2); ctx.fill(); s.x-=0.2; if(s.x<0) s.x=canvas.width; }
-
-    ctx.save();
-    let gradient = ctx.createRadialGradient(moon.x, moon.y, moon.radius-15, moon.x, moon.y, moon.radius+moon.glow);
-    gradient.addColorStop(0,"rgba(255,255,230,0.9)");
-    gradient.addColorStop(1,"rgba(200,180,255,0.3)");
-    ctx.fillStyle = gradient; 
-    ctx.beginPath(); 
-    ctx.arc(moon.x,moon.y,moon.radius+moon.glow,0,Math.PI*2); 
-    ctx.fill();
-    ctx.restore();
-
-    mountains.forEach(layer=>{
-        ctx.fillStyle=layer.color; 
-        ctx.beginPath(); ctx.moveTo(0,canvas.height);
-        layer.peaks.forEach(p=>{ p.x-=layer.speed; if(p.x<-50)p.x=canvas.width+Math.random()*100; ctx.lineTo(p.x,canvas.height-p.height); });
-        ctx.lineTo(canvas.width,canvas.height); ctx.closePath(); ctx.fill();
-    });
-
-    forestLayers.forEach((layer, li)=>{
-        forestPositions[li].forEach(tree=>{
-            tree.x -= layer.speed; if(tree.x<-50) tree.x=canvas.width;
-            ctx.fillStyle="#1a1a1a"; ctx.fillRect(tree.x, canvas.height-groundHeight-tree.height, 10, tree.height);
-        });
-    });
-
-    ctx.fillStyle="#111"; ctx.fillRect(0,canvas.height-groundHeight,canvas.width,groundHeight);
+  ctx.fillStyle="#020024"; ctx.fillRect(0,0,canvas.width,canvas.height);
+  stars.forEach(s=>{ ctx.fillStyle="white"; ctx.beginPath(); ctx.arc(s.x,s.y,s.size,0,Math.PI*2); ctx.fill(); s.x-=0.2; if(s.x<0) s.x=canvas.width; });
+  ctx.save();
+  let grad=ctx.createRadialGradient(moon.x,moon.y,moon.radius-15,moon.x,moon.y,moon.radius+moon.glow);
+  grad.addColorStop(0,"rgba(255,255,230,0.9)"); grad.addColorStop(1,"rgba(200,180,255,0.3)");
+  ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(moon.x,moon.y,moon.radius+moon.glow,0,Math.PI*2); ctx.fill(); ctx.restore();
+  mountains.forEach(layer=>{ ctx.fillStyle=layer.color; ctx.beginPath(); ctx.moveTo(0,canvas.height); layer.peaks.forEach(p=>{ p.x-=layer.speed; if(p.x<-50) p.x=canvas.width+Math.random()*100; ctx.lineTo(p.x,canvas.height-p.height); }); ctx.lineTo(canvas.width,canvas.height); ctx.closePath(); ctx.fill(); });
+  forestLayers.forEach((layer,li)=>{ forestPositions[li].forEach(tree=>{ tree.x-=layer.speed; if(tree.x<-50) tree.x=canvas.width; ctx.fillStyle="#1a1a1a"; ctx.fillRect(tree.x,canvas.height-groundHeight-tree.height,10,tree.height); }); });
+  ctx.fillStyle="#111"; ctx.fillRect(0,canvas.height-groundHeight,canvas.width,groundHeight);
 }
 
 // ---------------------- GAME LOOP ----------------------
 function gameLoop(){
-    drawBackground();
-    if(!isPaused && !isGameOver){
-        velocityY+=gravity; foxY+=velocityY;
-        if(foxY+foxHeight>=canvas.height-groundHeight){ foxY=canvas.height-foxHeight-groundHeight; velocityY=0; jumpCount=0; }
-
-        updateObstacles();
-        updateFireballs();
-        detectCollisions();
-
-        if(score<150) gameSpeed=5; else if(score<300) gameSpeed=7; else gameSpeed=9;
-    }
-    ctx.drawImage(foxImg,foxX,foxY,foxWidth,foxHeight);
-    drawObstacles();
-    drawFireballs();
-    drawHUD();
-    requestAnimationFrame(gameLoop);
+  drawBackground();
+  if(!isPaused&&!isGameOver){
+    velocityY+=gravity; foxY+=velocityY;
+    if(foxY+foxHeight>=canvas.height-groundHeight){ foxY=canvas.height-foxHeight-groundHeight; velocityY=0; jumpCount=0; }
+    updateObstacles();
+    updateFireballs();
+    detectCollisions();
+    gameSpeed = score<150 ? 5 : score<300 ? 7 : 9;
+  }
+  ctx.drawImage(foxImg,foxX,foxY,foxWidth,foxHeight);
+  drawObstacles(); drawFireballs(); drawHUD();
+  requestAnimationFrame(gameLoop);
 }
 gameLoop();
 
@@ -289,20 +255,19 @@ function startGame(){ mainMenu.classList.add("hidden"); continueBtn.style.displa
 function pauseGame(){ isPaused=true; pauseMenu.classList.remove("hidden"); }
 function resumeGame(){ isPaused=false; pauseMenu.classList.add("hidden"); }
 function restartGame(){ pauseMenu.classList.add("hidden"); isPaused=false; isGameOver=false; resetGame(); spawnObstacle(); spawnFireball(); }
-function returnToMenu(){ isPaused=true; pauseMenu.classList.add("hidden"); mainMenu.classList.remove("hidden"); pauseBtn.style.display="none"; bestScoreText.textContent=`Top Score: ${topScores[0]?.score||0}`; }
+function returnToMenu(){ isPaused=true; pauseMenu.classList.add("hidden"); mainMenu.classList.remove("hidden"); pauseBtn.style.display="none"; loadTopScores(); }
 function resetGame(){ foxY=canvas.height-foxHeight-groundHeight; velocityY=0; obstacles=[]; fireballs=[]; score=0; lives=3; jumpCount=0; gameSpeed=5; }
 
 // ---------------------- GAME OVER ----------------------
-function gameOver(){
-    isGameOver=true; isPaused=true; pauseBtn.style.display="none";
-    let playerName = prompt("Enter your name:","Anonymous") || "Anonymous";
-    topScores.push({name:playerName, score:score});
-    topScores.sort((a,b)=>b.score-a.score);
-    if(topScores.length>10) topScores.pop();
-    localStorage.setItem("foxTopScores", JSON.stringify(topScores));
-    alert(`Game Over! Score: ${score}\nTop Score: ${topScores[0].score} by ${topScores[0].name}`);
-    returnToMenu();
+function gameOver(){ isGameOver=true; isPaused=true; pauseBtn.style.display="none"; 
+  let playerName = prompt("Enter your name:","Anonymous") || "Anonymous"; 
+  saveScore(playerName,score); 
+  alert(`Game Over! Score: ${score}\nTop Score: ${topScores[0]?.score || 0} by ${topScores[0]?.name}`); 
+  returnToMenu();
 }
+
+// ---------------------- INITIAL LOAD ----------------------
+loadTopScores();
 </script>
 </body>
 </html>
