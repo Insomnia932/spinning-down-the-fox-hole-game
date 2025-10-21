@@ -4,16 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Spinning Down the Fox Hole - Playable</title>
-
-<!-- Google Analytics (GA4) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-CCVMTT7KFE"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-  gtag('config', 'G-CCVMTT7KFE');
-</script>
-
 <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap" rel="stylesheet">
 <style>
 body { margin:0; overflow:hidden; font-family:Arial,sans-serif; background:#020024; }
@@ -64,6 +54,7 @@ canvas { display:block; position:absolute; top:0; left:0; z-index:1; }
   <h2 id="bestScoreText">Top Score: 0</h2>
   <button id="playBtn">Play</button>
   <button id="continueBtn" style="display:none;">Continue</button>
+  <button id="highScoresBtn">High Scores</button>
   <button id="fullscreenBtn">Fullscreen</button>
   <div id="leaderboard"></div>
 </div>
@@ -196,6 +187,7 @@ const mainMenu=document.getElementById("mainMenu");
 const pauseMenu=document.getElementById("pauseMenu");
 const playBtn=document.getElementById("playBtn");
 const continueBtn=document.getElementById("continueBtn");
+const highScoresBtn=document.getElementById("highScoresBtn");
 const continueGameBtn=document.getElementById("continueGameBtn");
 const restartBtn=document.getElementById("restartBtn");
 const menuBtn=document.getElementById("menuBtn");
@@ -205,6 +197,8 @@ playBtn.onclick=startGame;
 continueBtn.onclick=resumeGame;
 restartBtn.onclick=restartGame;
 menuBtn.onclick=returnToMenu;
+
+highScoresBtn.onclick = ()=>loadTopScores();
 pauseBtn.onclick=()=>{ if(!isPaused&&!isGameOver) pauseGame(); };
 continueGameBtn.onclick=resumeGame;
 
@@ -257,29 +251,15 @@ function gameLoop(){
 gameLoop();
 
 // ---------------------- GAME FUNCTIONS ----------------------
-function startGame(){ 
-  mainMenu.classList.add("hidden"); 
-  continueBtn.style.display="block"; 
-  isPaused=false; 
-  isGameOver=false; 
-  pauseBtn.style.display="block"; 
-  resetGame(); 
-  spawnObstacle(); 
-  spawnFireball(); 
-  gtag('event','game_start'); // GA event
-}
+function startGame(){ mainMenu.classList.add("hidden"); continueBtn.style.display="block"; isPaused=false; isGameOver=false; pauseBtn.style.display="block"; resetGame(); spawnObstacle(); spawnFireball(); }
 function pauseGame(){ isPaused=true; pauseMenu.classList.remove("hidden"); }
 function resumeGame(){ isPaused=false; pauseMenu.classList.add("hidden"); }
-function restartGame(){ pauseMenu.classList.add("hidden"); isPaused=false; isGameOver=false; resetGame(); spawnObstacle(); spawnFireball(); gtag('event','game_start'); }
+function restartGame(){ pauseMenu.classList.add("hidden"); isPaused=false; isGameOver=false; resetGame(); spawnObstacle(); spawnFireball(); }
 function returnToMenu(){ isPaused=true; pauseMenu.classList.add("hidden"); mainMenu.classList.remove("hidden"); pauseBtn.style.display="none"; loadTopScores(); }
 function resetGame(){ foxY=canvas.height-foxHeight-groundHeight; velocityY=0; obstacles=[]; fireballs=[]; score=0; lives=3; jumpCount=0; gameSpeed=5; }
 
 // ---------------------- GAME OVER ----------------------
-function gameOver(){ 
-  isGameOver=true; 
-  isPaused=true; 
-  pauseBtn.style.display="none"; 
-  gtag('event','game_over',{score:score}); // GA event
+function gameOver(){ isGameOver=true; isPaused=true; pauseBtn.style.display="none"; 
   let playerName = prompt("Enter your name:","Anonymous") || "Anonymous"; 
   saveScore(playerName,score); 
   alert(`Game Over! Score: ${score}\nTop Score: ${topScores[0]?.score || 0} by ${topScores[0]?.name}`); 
