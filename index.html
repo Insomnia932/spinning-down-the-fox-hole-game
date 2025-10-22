@@ -3,17 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Spinning Down the Fox Hole - Playable</title>
-
-<!-- Google Analytics -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-  gtag('config', 'G-XXXXXXXXXX'); // Replace with your GA Measurement ID
-</script>
-
+<title>Spinning Down the Fox Hole</title>
 <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap" rel="stylesheet">
 <style>
 body { margin:0; overflow:hidden; font-family:Arial,sans-serif; background:#020024; }
@@ -80,8 +70,10 @@ canvas { display:block; position:absolute; top:0; left:0; z-index:1; }
 <button id="exitFullscreenBtn">X</button>
 <canvas id="gameCanvas"></canvas>
 
+<!-- Firebase CDN -->
 <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-database-compat.js"></script>
+
 <script>
 // ---------------------- FIREBASE ----------------------
 const firebaseConfig = {
@@ -121,32 +113,30 @@ let topScores = [];
 const bestScoreText = document.getElementById("bestScoreText");
 const leaderboardDiv = document.getElementById("leaderboard");
 
-function loadTopScores(){
-  db.ref('scores').orderByChild('score').limitToLast(10).once('value')
-    .then(snapshot => {
-      if(snapshot.exists()){
-        topScores = Object.values(snapshot.val()).sort((a,b)=>b.score-a.score);
-        bestScoreText.textContent = `Top Score: ${topScores[0]?.score || 0}`;
-        displayLeaderboard();
-      } else {
-        topScores = [];
-        bestScoreText.textContent = "Top Score: 0";
-        leaderboardDiv.innerHTML = "<p>No high scores yet!</p>";
-      }
-    }).catch(err=>console.error("Firebase load error:", err));
-}
-
-function saveScore(name, score){
-  db.ref('scores').push({name, score, timestamp: Date.now()})
-    .then(()=> loadTopScores())
-    .catch(err=>console.error("Firebase save error:", err));
-}
-
 function displayLeaderboard(){
   leaderboardDiv.innerHTML = "<h3>🏆 Top 10 High Scores 🏆</h3>";
   topScores.forEach((entry,index)=>{
     leaderboardDiv.innerHTML += `<p>${index+1}. ${entry.name} - ${entry.score}</p>`;
   });
+}
+
+function setupLiveLeaderboard() {
+  const scoresRef = db.ref('scores').orderByChild('score').limitToLast(10);
+  scoresRef.on('value', snapshot => {
+    if (snapshot.exists()) {
+      topScores = Object.values(snapshot.val()).sort((a,b)=>b.score-a.score);
+      bestScoreText.textContent = `Top Score: ${topScores[0]?.score || 0}`;
+      displayLeaderboard();
+    } else {
+      topScores = [];
+      bestScoreText.textContent = "Top Score: 0";
+      leaderboardDiv.innerHTML = "<p>No high scores yet!</p>";
+    }
+  });
+}
+
+function saveScore(name, score){
+  db.ref('scores').push({name, score, timestamp: Date.now()});
 }
 
 // ---------------------- FOREST & BACKGROUND ----------------------
@@ -158,7 +148,7 @@ let forestLayers = [
 let forestPositions = forestLayers.map(layer => {
   let positions = [];
   for (let x = 0; x < canvas.width + 50; x += 50) {
-    positions.push({x:x, height:layer.height + Math.random() * 50});
+    positions.push({x:x, height:layer.height + Math.random()*50});
   }
   return positions;
 });
@@ -171,32 +161,13 @@ mountains.forEach(layer=>{
     layer.peaks.push({x:x, height:layer.baseHeight + Math.random()*150});
   }
 });
-let stars=[]; 
-for(let i=0;i<100;i++) stars.push({x:Math.random()*canvas.width, y:Math.random()*canvas.height*0.5, size:Math.random()*2+1});
+let stars=[]; for(let i=0;i<100;i++) stars.push({x:Math.random()*canvas.width, y:Math.random()*canvas.height*0.5, size:Math.random()*2+1});
 let moon={x:canvas.width*0.8, y:canvas.height*0.15, radius:60, glow:25};
 
 // ---------------------- INPUT ----------------------
 function jump(){ if(isPaused||isGameOver) return; if(jumpCount<maxJumps){ velocityY=-16; jumpCount++; } }
 document.addEventListener("keydown", e=>{ if(e.code==="Space") jump(); });
 document.addEventListener("touchstart", jump);
-
-// ---------------------- FULLSCREEN ----------------------
-const fullscreenBtn = document.getElementById("fullscreenBtn");
-const exitFullscreenBtn = document.getElementById("exitFullscreenBtn");
-fullscreenBtn.onclick = ()=>{
-  if(!document.fullscreenElement){
-    document.documentElement.requestFullscreen().then(()=>{
-      exitFullscreenBtn.style.display="block";
-      gtag('event','fullscreen_enter',{event_category:'game'});
-    });
-  }
-};
-exitFullscreenBtn.onclick = ()=>{
-  if(document.fullscreenElement) {
-    document.exitFullscreen();
-    gtag('event','fullscreen_exit',{event_category:'game'});
-  }
-};
 
 // ---------------------- MENU BUTTONS ----------------------
 const mainMenu=document.getElementById("mainMenu");
@@ -213,85 +184,86 @@ playBtn.onclick=startGame;
 continueBtn.onclick=resumeGame;
 restartBtn.onclick=restartGame;
 menuBtn.onclick=returnToMenu;
-
-highScoresBtn.onclick = ()=>{ loadTopScores(); gtag('event','view_leaderboard',{event_category:'game'}); };
 pauseBtn.onclick=()=>{ if(!isPaused&&!isGameOver) pauseGame(); };
 continueGameBtn.onclick=resumeGame;
 
-// ---------------------- SPAWN & UPDATE ----------------------
-function spawnObstacle() { obstacles.push({x:canvas.width+50, y:canvas.height-groundHeight-(80+Math.random()*40), width:(80+Math.random()*40)*0.7, height:80+Math.random()*40, scored:false, hit:false}); }
-function spawnFireball() { fireballs.push({x:canvas.width+50, y:canvas.height-groundHeight-70-Math.random()*30, radius:20, passed:false, hit:false}); }
-function updateObstacles() { obstacles.forEach(obs=>{ obs.x-=gameSpeed; if(!obs.scored && obs.x + obs.width < foxX){ obs.scored=true; score+=1; } }); obstacles = obstacles.filter(obs=>obs.x+obs.width>0); if(obstacles.length===0 || obstacles[obstacles.length-1].x<canvas.width-400) spawnObstacle(); }
-function updateFireballs() { fireballs.forEach(f=>{ f.x -= gameSpeed+1; if(!f.passed && f.x+f.radius*2<foxX){ f.passed=true; score+=5; } }); fireballs = fireballs.filter(f=>f.x+f.radius*2>0); if(fireballs.length===0 && Math.random()<0.02) spawnFireball(); }
+// ---------------------- SPAWN ----------------------
+function spawnObstacle(){ obstacles.push({x:canvas.width+50, y:canvas.height-groundHeight-(80+Math.random()*40), width:(80+Math.random()*40)*0.7, height:80+Math.random()*40, scored:false, hit:false}); }
+function spawnFireball(){ fireballs.push({x:canvas.width+50, y:canvas.height-groundHeight-70-Math.random()*30, radius:20, passed:false, hit:false}); }
+function updateObstacles(){ obstacles.forEach(obs=>{ obs.x-=gameSpeed; if(!obs.scored && obs.x + obs.width < foxX){ obs.scored=true; score+=1; } }); obstacles = obstacles.filter(obs=>obs.x+obs.width>0); if(obstacles.length===0 || obstacles[obstacles.length-1].x<canvas.width-400) spawnObstacle(); }
+function updateFireballs(){ fireballs.forEach(f=>{ f.x -= gameSpeed+1; if(!f.passed && f.x+f.radius*2<foxX){ f.passed=true; score+=5; } }); fireballs = fireballs.filter(f=>f.x+f.radius*2>0); if(fireballs.length===0 && Math.random()<0.02) spawnFireball(); }
 
 // ---------------------- COLLISIONS ----------------------
 function detectCollisions(){
-  obstacles.forEach(obs=>{ if(!obs.hit && foxX+foxWidth*0.6>obs.x && foxX<obs.x+obs.width*0.6 && foxY+foxHeight>obs.y && foxY<obs.y+obs.height){ lives--; obs.hit=true; } });
+  obstacles.forEach(obs=>{ if(!obs.hit && foxX+foxWidth*0.6>obs.x && foxX<obs.x+obs.width*0.6 && foxY+foxHeight>obs.y && foxY<obs.height+obs.y){ lives--; obs.hit=true; } });
   fireballs.forEach(f=>{ if(!f.hit && foxX+foxWidth*0.6>f.x && foxX<f.x+f.radius*2 && foxY+foxHeight>f.y && foxY<f.y+f.radius*2){ lives--; f.hit=true; } });
   if(lives<=0) gameOver();
 }
 
-// ---------------------- DRAW FUNCTIONS ----------------------
+// ---------------------- DRAW ----------------------
 function drawObstacles(){ obstacles.forEach(obs=>ctx.drawImage(obstacleImg, obs.x, obs.y, obs.width, obs.height)); }
-function drawFireballs(){ fireballs.forEach(f=>{ ctx.save(); let grad=ctx.createRadialGradient(f.x+f.radius,f.y+f.radius,5,f.x+f.radius,f.y+f.radius,f.radius); grad.addColorStop(0,"orange"); grad.addColorStop(1,"rgba(255,0,0,0.5)"); ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(f.x+f.radius,f.y+f.radius,f.radius,0,Math.PI*2); ctx.fill(); ctx.restore(); }); }
+function drawFireballs(){ fireballs.forEach(f=>{ let grad=ctx.createRadialGradient(f.x+f.radius,f.y+f.radius,5,f.x+f.radius,f.y+f.radius,f.radius); grad.addColorStop(0,"orange"); grad.addColorStop(1,"rgba(255,0,0,0.5)"); ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(f.x+f.radius,f.y+f.radius,f.radius,0,Math.PI*2); ctx.fill(); }); }
 function drawHUD(){ ctx.fillStyle="white"; ctx.font="24px Arial"; ctx.fillText("Score: "+score,20,40); ctx.fillText("Top Score: "+(topScores[0]?.score||0),20,70); for(let i=0;i<lives;i++){ ctx.drawImage(heartImg,20+i*45,100,40,40); } }
 
-// ---------------------- DRAW BACKGROUND ----------------------
 function drawBackground(){
   ctx.fillStyle="#020024"; ctx.fillRect(0,0,canvas.width,canvas.height);
   stars.forEach(s=>{ ctx.fillStyle="white"; ctx.beginPath(); ctx.arc(s.x,s.y,s.size,0,Math.PI*2); ctx.fill(); s.x-=0.2; if(s.x<0) s.x=canvas.width; });
-  ctx.save();
-  let grad=ctx.createRadialGradient(moon.x,moon.y,moon.radius-15,moon.x,moon.y,moon.radius+moon.glow);
-  grad.addColorStop(0,"rgba(255,255,230,0.9)"); grad.addColorStop(1,"rgba(200,180,255,0.3)");
-  ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(moon.x,moon.y,moon.radius+moon.glow,0,Math.PI*2); ctx.fill(); ctx.restore();
-  mountains.forEach(layer=>{ ctx.fillStyle=layer.color; ctx.beginPath(); ctx.moveTo(0,canvas.height); layer.peaks.forEach(p=>{ p.x-=layer.speed; if(p.x<-50) p.x=canvas.width+Math.random()*100; ctx.lineTo(p.x,canvas.height-p.height); }); ctx.lineTo(canvas.width,canvas.height); ctx.closePath(); ctx.fill(); });
-  forestLayers.forEach((layer,li)=>{ forestPositions[li].forEach(tree=>{ tree.x-=layer.speed; if(tree.x<-50) tree.x=canvas.width; ctx.fillStyle="#1a1a1a"; ctx.fillRect(tree.x,canvas.height-groundHeight-tree.height,10,tree.height); }); });
+  let grad=ctx.createRadialGradient(moon.x,moon.y,moon.radius-15,moon.x,moon.y,moon.radius+moon.glow); grad.addColorStop(0,"rgba(255,255,230,0.9)"); grad.addColorStop(1,"rgba(200,180,255,0.3)"); ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(moon.x,moon.y,moon.radius+moon.glow,0,Math.PI*2); ctx.fill();
+  mountains.forEach(layer=>{ ctx.fillStyle=layer.color; ctx.beginPath(); ctx.moveTo(0,canvas.height); layer.peaks.forEach(p=>{ p.x-=layer.speed; if(p.x<-50)p.x=canvas.width+Math.random()*100; ctx.lineTo(p.x,canvas.height-p.height); }); ctx.lineTo(canvas.width,canvas.height); ctx.closePath(); ctx.fill(); });
+  forestLayers.forEach((layer, li)=>{ forestPositions[li].forEach(tree=>{ tree.x-=layer.speed; if(tree.x<-50) tree.x=canvas.width; ctx.fillStyle="#1a1a1a"; ctx.fillRect(tree.x, canvas.height-groundHeight-tree.height, 10, tree.height); }); });
   ctx.fillStyle="#111"; ctx.fillRect(0,canvas.height-groundHeight,canvas.width,groundHeight);
 }
 
 // ---------------------- GAME LOOP ----------------------
 function gameLoop(){
   drawBackground();
-  if(!isPaused&&!isGameOver){
+  if(!isPaused && !isGameOver){
     velocityY+=gravity; foxY+=velocityY;
     if(foxY+foxHeight>=canvas.height-groundHeight){ foxY=canvas.height-foxHeight-groundHeight; velocityY=0; jumpCount=0; }
     updateObstacles();
     updateFireballs();
     detectCollisions();
-    gameSpeed = score<150 ? 5 : score<300 ? 7 : 9;
+    if(score<150) gameSpeed=5; else if(score<300) gameSpeed=7; else gameSpeed=9;
   }
   ctx.drawImage(foxImg,foxX,foxY,foxWidth,foxHeight);
-  drawObstacles(); drawFireballs(); drawHUD();
+  drawObstacles();
+  drawFireballs();
+  drawHUD();
   requestAnimationFrame(gameLoop);
 }
 gameLoop();
 
 // ---------------------- GAME FUNCTIONS ----------------------
-function startGame(){
-  mainMenu.classList.add("hidden");
-  continueBtn.style.display="block";
-  isPaused=false; isGameOver=false; pauseBtn.style.display="block";
-  resetGame(); spawnObstacle(); spawnFireball();
-  gtag('event','game_start',{event_category:'game'});
-}
+function startGame(){ mainMenu.classList.add("hidden"); continueBtn.style.display="block"; isPaused=false; isGameOver=false; pauseBtn.style.display="block"; resetGame(); spawnObstacle(); spawnFireball(); }
 function pauseGame(){ isPaused=true; pauseMenu.classList.remove("hidden"); }
 function resumeGame(){ isPaused=false; pauseMenu.classList.add("hidden"); }
 function restartGame(){ pauseMenu.classList.add("hidden"); isPaused=false; isGameOver=false; resetGame(); spawnObstacle(); spawnFireball(); }
-function returnToMenu(){ isPaused=true; pauseMenu.classList.add("hidden"); mainMenu.classList.remove("hidden"); pauseBtn.style.display="none"; loadTopScores(); }
+function returnToMenu(){ isPaused=true; pauseMenu.classList.add("hidden"); mainMenu.classList.remove("hidden"); pauseBtn.style.display="none"; }
 function resetGame(){ foxY=canvas.height-foxHeight-groundHeight; velocityY=0; obstacles=[]; fireballs=[]; score=0; lives=3; jumpCount=0; gameSpeed=5; }
 
 // ---------------------- GAME OVER ----------------------
 function gameOver(){
-  isGameOver=true; isPaused=true; pauseBtn.style.display="none"; 
-  let playerName = prompt("Enter your name:","Anonymous") || "Anonymous"; 
-  saveScore(playerName,score);
-  gtag('event','game_over',{event_category:'game', score:score, player_name:playerName});
-  alert(`Game Over! Score: ${score}\nTop Score: ${topScores[0]?.score || 0} by ${topScores[0]?.name}`);
+  isGameOver=true; isPaused=true; pauseBtn.style.display="none";
+  let playerName = prompt("Enter your name:","Anonymous") || "Anonymous";
+  saveScore(playerName, score);
+  alert(`Game Over! Score: ${score}`);
   returnToMenu();
 }
 
-// ---------------------- INITIAL LOAD ----------------------
-loadTopScores();
+// ---------------------- HIGH SCORES BUTTON ----------------------
+highScoresBtn.onclick = () => { if(topScores.length===0){ alert("No high scores yet!"); return; } displayLeaderboard(); };
+
+// ---------------------- FULLSCREEN ----------------------
+const fullscreenBtn = document.getElementById("fullscreenBtn");
+const exitFullscreenBtn = document.getElementById("exitFullscreenBtn");
+fullscreenBtn.onclick = ()=>{
+  if(!document.fullscreenElement){ document.documentElement.requestFullscreen().then(()=>{ exitFullscreenBtn.style.display="block"; }); }
+};
+exitFullscreenBtn.onclick = ()=>{ if(document.fullscreenElement) document.exitFullscreen(); };
+
+// ---------------------- START LIVE LEADERBOARD ----------------------
+setupLiveLeaderboard();
 </script>
+
 </body>
-</html>
+    </html>
